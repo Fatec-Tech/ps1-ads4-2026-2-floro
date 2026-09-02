@@ -6,8 +6,8 @@ const formulario = document.getElementById('form-paciente');
 const tabela = document.getElementById('tabela-pacientes');
 
 // Função responsável por adicionar um paciente ao array
-function adicionarPaciente(nome, email, nascimento) {
-	const novoPaciente = { nome, email, nascimento };
+function adicionarPaciente(nome, email, nascimento, telefone) {
+	const novoPaciente = { nome, email, nascimento, telefone };
 	pacientes.push(novoPaciente);
 }
 
@@ -18,11 +18,15 @@ function renderizarTabela() {
 	pacientes.forEach((paciente) => {
 		const linha = document.createElement('tr');
 
+		const idade = calcularIdade(paciente.nascimento);
+
 		linha.innerHTML = `
-      <td>${paciente.nome}</td>
-      <td>${paciente.email}</td>
-      <td>${formatarData(paciente.nascimento)}</td>
-    `;
+		  <td>${paciente.nome}</td>
+		  <td>${paciente.email}</td>
+		  <td>${idade}</td>
+		  <td>${paciente.telefone || ''}</td>
+		  <td>${formatarData(paciente.nascimento)}</td>
+		`;
 
 		tabela.appendChild(linha);
 	});
@@ -34,6 +38,19 @@ function formatarData(dataISO) {
 	return `${dia}/${mes}/${ano}`;
 }
 
+// Calcula a idade baseada na data ISO (YYYY-MM-DD)
+function calcularIdade(dataISO) {
+	if (!dataISO) return '';
+	const [ano, mes, dia] = dataISO.split('-').map(Number);
+	const hoje = new Date();
+	let idade = hoje.getFullYear() - ano;
+	const mesHoje = hoje.getMonth() + 1;
+	if (mesHoje < mes || (mesHoje === mes && hoje.getDate() < dia)) {
+		idade--;
+	}
+	return idade;
+}
+
 // Evento disparado quando o formulário é enviado
 formulario.addEventListener('submit', (event) => {
 	event.preventDefault(); // evita o recarregamento da página
@@ -41,8 +58,9 @@ formulario.addEventListener('submit', (event) => {
 	const nome = document.getElementById('nome').value;
 	const email = document.getElementById('email').value;
 	const nascimento = document.getElementById('nascimento').value;
+	const telefone = document.getElementById('telefone').value;
 
-	adicionarPaciente(nome, email, nascimento);
+	adicionarPaciente(nome, email, nascimento, telefone);
 	renderizarTabela();
 
 	formulario.reset(); // limpa os campos do formulário
