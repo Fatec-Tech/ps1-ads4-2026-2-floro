@@ -60,6 +60,15 @@ formulario.addEventListener('submit', (event) => {
 	const nascimento = document.getElementById('nascimento').value;
 	const telefone = document.getElementById('telefone').value;
 
+	// Normaliza e verifica e-mail duplicado (ignora maiúsculas/espaços)
+	const normalizedEmail = (email || '').trim().toLowerCase();
+	const emailJaExiste = pacientes.some(p => (p.email || '').trim().toLowerCase() === normalizedEmail);
+
+	if (emailJaExiste) {
+		alert('E-mail já cadastrado');
+		return; // não adiciona paciente duplicado
+	}
+
 	adicionarPaciente(nome, email, nascimento, telefone);
 	renderizarTabela();
 
