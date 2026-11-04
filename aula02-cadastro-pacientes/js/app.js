@@ -1,43 +1,81 @@
-// Array que guarda os pacientes cadastrados (em memória, só nesta sessão)
+// Arquivo com os pacientes iniciais.
+// Para testar o tratamento de erro (Exercício 4), troque por 'data/inexistente.json'.
+const URL_DADOS = 'data/pacientes.json';
+
+// Exercício 1: tempo de espera artificial (em ms) antes do fetch,
+// só para dar tempo de ver a mensagem "Carregando pacientes..."
+const ATRASO_SIMULADO_MS = 1000;
+
+// Array que guarda os pacientes. Cada um tem uma "origem":
+// 'json' (veio do arquivo) ou 'manual' (cadastrado no formulário nesta sessão)
 const pacientes = [];
 
-// Referências aos elementos do DOM que vamos usar várias vezes
-const formulario = document.getElementById('form-paciente');
-const tabela = document.getElementById('tabela-pacientes');
-const contador = document.getElementById('contador-pacientes');
+// Estado do carregamento inicial: 'carregando' | 'ok' | 'erro'
+let estadoCarga = 'carregando';
 
-// Função responsável por adicionar um paciente ao array
-function adicionarPaciente(nome, email, nascimento, telefone) {
-	const novoPaciente = { nome, email, nascimento, telefone };
-	pacientes.push(novoPaciente);
+const formulario = document.getElementById('form-paciente');
+const tabela = document.getElementById('tabela');
+const corpoTabela = document.getElementById('tabela-pacientes');
+const mensagemCarregando = document.getElementById('carregando');
+const mensagemErro = document.getElementById('erro-carregamento');
+const listaVazia = document.getElementById('lista-vazia');
+const blocoContadores = document.getElementById('contadores');
+const contador = document.getElementById('contador-pacientes');
+const contadorOrigem = document.getElementById('contador-origem');
+
+function adicionarPaciente(nome, email, nascimento, telefone, origem) {
+	pacientes.push({ nome, email, nascimento, telefone, origem });
 }
 
-// Função responsável por desenhar a tabela inteira a partir do array
+function criarCelula(texto) {
+	const celula = document.createElement('td');
+	celula.textContent = texto; // textContent evita injeção de HTML
+	return celula;
+}
+
 function renderizarTabela() {
-	tabela.innerHTML = ''; // limpa a tabela antes de redesenhar
+	corpoTabela.innerHTML = '';
 
 	pacientes.forEach((paciente) => {
 		const linha = document.createElement('tr');
 
-		const idade = calcularIdade(paciente.nascimento);
+		linha.appendChild(criarCelula(paciente.nome));
+		linha.appendChild(criarCelula(paciente.email));
+		linha.appendChild(criarCelula(calcularIdade(paciente.nascimento)));
+		linha.appendChild(criarCelula(paciente.telefone || '—'));
+		linha.appendChild(criarCelula(formatarData(paciente.nascimento)));
+		linha.appendChild(
+			criarCelula(paciente.origem === 'json' ? 'Arquivo JSON' : 'Cadastro manual')
+		);
 
-		linha.innerHTML = `
-		  <td>${paciente.nome}</td>
-		  <td>${paciente.email}</td>
-		  <td>${idade}</td>
-		  <td>${paciente.telefone || ''}</td>
-		  <td>${formatarData(paciente.nascimento)}</td>
-		`;
-
-		tabela.appendChild(linha);
+		corpoTabela.appendChild(linha);
 	});
 
-	if (contador) {
-		contador.textContent = `Total de pacientes: ${pacientes.length}`;
-	}
+	// Exercício 3: lista vazia → mensagem no lugar da tabela
+	// (só depois que a carga terminou com sucesso, para não aparecer enquanto carrega)
+	const vazia = pacientes.length === 0 && estadoCarga === 'ok';
+	listaVazia.classList.toggle('d-none', !vazia);
+	tabela.classList.toggle('d-none', pacientes.length === 0);
+
+	atualizarContadores();
 }
 
-// Função utilitária só para formatar a data no padrão dd/mm/aaaa
+// Exercício 2: quantidade de pacientes vindos do JSON x cadastrados manualmente
+function atualizarContadores() {
+	const doJson = pacientes.filter((p) => p.origem === 'json').length;
+	const manuais = pacientes.filter((p) => p.origem === 'manual').length;
+
+	contador.textContent = `Total de pacientes: ${pacientes.length}`;
+	contadorOrigem.textContent = `Do arquivo JSON: ${doJson} | Cadastrados manualmente nesta sessão: ${manuais}`;
+
+	// Os contadores só aparecem depois de uma carga bem-sucedida
+	// ou quando já existe algum paciente cadastrado manualmente.
+	blocoContadores.classList.toggle(
+		'd-none',
+		estadoCarga === 'carregando' || (estadoCarga === 'erro' && pacientes.length === 0)
+	);
+}
+
 function formatarData(dataISO) {
 	const [ano, mes, dia] = dataISO.split('-');
 	return `${dia}/${mes}/${ano}`;
@@ -56,26 +94,79 @@ function calcularIdade(dataISO) {
 	return idade;
 }
 
-// Evento disparado quando o formulário é enviado
+// Espera um tempo (usada para simular a latência de rede)
+function esperar(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Busca os pacientes iniciais a partir do arquivo JSON
+async function carregarPacientesIniciais() {
+	try {
+		// Exercício 1: setTimeout de 1 segundo ANTES do fetch
+		await esperar(ATRASO_SIMULADO_MS);
+
+		const resposta = await fetch(URL_DADOS);
+
+		// Nem toda resposta é sucesso (um 404 NÃO cai no catch sozinho)
+		if (!resposta.ok) {
+			throw new Error(`Erro HTTP: ${resposta.status}`);
+		}
+
+		const dados = await resposta.json(); // converte a resposta em objeto JS
+
+		dados.forEach((paciente) => {
+			adicionarPaciente(
+				paciente.nome,
+				paciente.email,
+				paciente.nascimento,
+				paciente.telefone,
+				'json'
+			);
+		});
+
+		estadoCarga = 'ok';
+		mensagemCarregando.classList.add('d-none');
+		mensagemErro.classList.add('d-none');
+	} catch (erro) {
+		console.error('Não foi possível carregar os pacientes:', erro);
+
+		// Exercício 4: feedback visual amigável para o usuário (não só no console)
+		estadoCarga = 'erro';
+		mensagemCarregando.classList.add('d-none');
+		mensagemErro.textContent =
+			'Não foi possível carregar a lista de pacientes. ' +
+			'Confira se a página está sendo aberta por um servidor local (Live Server) ' +
+			'e tente novamente.';
+		mensagemErro.classList.remove('d-none');
+	}
+
+	renderizarTabela();
+}
+
 formulario.addEventListener('submit', (event) => {
-	event.preventDefault(); // evita o recarregamento da página
+	event.preventDefault();
 
 	const nome = document.getElementById('nome').value;
 	const email = document.getElementById('email').value;
 	const nascimento = document.getElementById('nascimento').value;
 	const telefone = document.getElementById('telefone').value;
 
-	// Normaliza e verifica e-mail duplicado (ignora maiúsculas/espaços)
-	const normalizedEmail = (email || '').trim().toLowerCase();
-	const emailJaExiste = pacientes.some(p => (p.email || '').trim().toLowerCase() === normalizedEmail);
+	// Não permite e-mail repetido (considera também os pacientes vindos do JSON)
+	const emailNormalizado = email.trim().toLowerCase();
+	const emailJaExiste = pacientes.some(
+		(p) => (p.email || '').trim().toLowerCase() === emailNormalizado
+	);
 
 	if (emailJaExiste) {
 		alert('E-mail já cadastrado');
-		return; // não adiciona paciente duplicado
+		return;
 	}
 
-	adicionarPaciente(nome, email, nascimento, telefone);
+	adicionarPaciente(nome, email, nascimento, telefone, 'manual');
 	renderizarTabela();
 
-	formulario.reset(); // limpa os campos do formulário
+	formulario.reset();
 });
+
+// Assim que o script carrega, já dispara a busca dos dados iniciais
+carregarPacientesIniciais();

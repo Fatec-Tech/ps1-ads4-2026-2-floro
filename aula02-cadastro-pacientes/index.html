@@ -28,7 +28,7 @@
 					<input type="email" class="form-control" id="email" required />
 				</div>
 
-								<div class="col-md-4">
+				<div class="col-md-4">
 					<label for="telefone" class="form-label">Telefone</label>
 					<input type="number" class="form-control" id="telefone" required />
 				</div>
@@ -43,10 +43,26 @@
 				</div>
 			</form>
 
-			<!-- Tabela de pacientes -->
 			<h2 class="h4 mb-3">Pacientes cadastrados</h2>
-			<p id="contador-pacientes" class="mb-2">Total de pacientes: 0</p>
-			<table class="table table-striped">
+
+			<!-- Mensagem de carregamento, visível enquanto os dados não chegam -->
+			<p id="carregando" class="text-muted">Carregando pacientes...</p>
+
+			<!-- Mensagem amigável de erro (preenchida pelo JavaScript quando o fetch falha) -->
+			<div id="erro-carregamento" class="alert alert-danger d-none" role="alert"></div>
+
+			<!-- Contadores: total e quantidade por origem -->
+			<div id="contadores" class="mb-3 d-none">
+				<p id="contador-pacientes" class="mb-1">Total de pacientes: 0</p>
+				<p id="contador-origem" class="mb-0 text-muted small"></p>
+			</div>
+
+			<!-- Exibida no lugar da tabela quando não há nenhum paciente -->
+			<p id="lista-vazia" class="alert alert-secondary d-none">
+				Nenhum paciente cadastrado ainda
+			</p>
+
+			<table id="tabela" class="table table-striped d-none">
 				<thead>
 					<tr>
 						<th>Nome</th>
@@ -54,6 +70,7 @@
 						<th>Idade</th>
 						<th>Telefone</th>
 						<th>Data de nascimento</th>
+						<th>Origem</th>
 					</tr>
 				</thead>
 				<tbody id="tabela-pacientes">
