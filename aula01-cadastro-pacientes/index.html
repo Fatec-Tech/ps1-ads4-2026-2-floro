@@ -28,7 +28,7 @@
 					<input type="email" class="form-control" id="email" required />
 				</div>
 
-								<div class="col-md-4">
+				<div class="col-md-4">
 					<label for="telefone" class="form-label">Telefone</label>
 					<input type="number" class="form-control" id="telefone" required />
 				</div>
@@ -45,15 +45,35 @@
 
 			<!-- Tabela de pacientes -->
 			<h2 class="h4 mb-3">Pacientes cadastrados</h2>
-			<p id="contador-pacientes" class="mb-2">Total de pacientes: 0</p>
+
+			<div class="row g-3 align-items-center mb-2">
+				<div class="col-md-6">
+					<p id="contador-pacientes" class="mb-0">Total de pacientes: 0</p>
+				</div>
+				<div class="col-md-6">
+					<!-- Busca em tempo real (evento input) -->
+					<input
+						type="search"
+						class="form-control"
+						id="busca"
+						placeholder="Buscar paciente por nome..."
+						aria-label="Buscar paciente por nome"
+					/>
+				</div>
+			</div>
+
 			<table class="table table-striped">
 				<thead>
 					<tr>
-						<th>Nome</th>
+						<!-- Clique no cabeçalho "Nome" para ordenar (A-Z / Z-A) -->
+						<th id="th-nome" class="th-ordenavel" title="Clique para ordenar por nome">
+							Nome <span id="seta-ordem"></span>
+						</th>
 						<th>E-mail</th>
 						<th>Idade</th>
 						<th>Telefone</th>
 						<th>Data de nascimento</th>
+						<th>Ações</th>
 					</tr>
 				</thead>
 				<tbody id="tabela-pacientes">

@@ -21,3 +21,12 @@ h1 {
     opacity: 1;
   }
 }
+/* Cabeçalho clicável usado para ordenar a tabela por nome */
+.th-ordenavel {
+  cursor: pointer;
+  user-select: none;
+}
+
+.th-ordenavel:hover {
+  text-decoration: underline;
+}

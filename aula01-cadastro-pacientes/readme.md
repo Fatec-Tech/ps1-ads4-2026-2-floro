@@ -276,3 +276,21 @@ formulario.addEventListener('submit', (event) => {
 5. O que precisaríamos mudar nesse código se quiséssemos que os dados fossem compartilhados entre vários usuários ao mesmo tempo? (gancho para introduzir a ideia de servidor/backend na próxima aula)
 
 ---
+
+---
+
+## ✅ Status das atividades (implementado neste repositório)
+
+**Exercícios (item 8)**
+- [x] Campo telefone no formulário e na tabela
+- [x] Coluna "Idade" calculada a partir da data de nascimento
+- [x] Contador "Total de pacientes: X"
+- [x] Bloqueio de e-mail duplicado com `alert()`
+
+**Extensões (item 9)**
+- [x] Botão "Remover" em cada linha
+- [x] Busca por nome em tempo real (evento `input`)
+- [x] Ordenação por nome ao clicar no cabeçalho (A-Z / Z-A)
+- [x] Persistência no `localStorage`
+
+As respostas das perguntas para discussão (item 11) estão em [`../issues/02-aula01-perguntas-discussao.md`](../issues/02-aula01-perguntas-discussao.md).
