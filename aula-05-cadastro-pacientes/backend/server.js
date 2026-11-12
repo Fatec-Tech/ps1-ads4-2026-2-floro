@@ -1,220 +1,252 @@
 const express = require('express');
 const cors = require('cors');
-const pool = require('./db'); // conexão com o PostgreSQL (Supabase)
+const pool = require('./banco');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-// ---------- Auxiliares ----------
-
-// to_char devolve a data como texto "AAAA-MM-DD". Sem isso o driver converteria o DATE
-// em um objeto Date do JavaScript e o JSON sairia com horário e fuso (ex.: 1990-04-12T03:00:00.000Z).
-const COLUNAS = `id, nome, email, to_char(nascimento, 'YYYY-MM-DD') AS nascimento`;
+const COLUNAS = 'id, nome, email, nascimento, telefone';
 
 const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function nascimentoValido(nascimento) {
-	if (!/^\d{4}-\d{2}-\d{2}$/.test(nascimento)) return false;
-	const [ano, mes, dia] = nascimento.split('-').map(Number);
-	const data = new Date(ano, mes - 1, dia);
-	// O JavaScript "corrige" datas inexistentes (31/02 vira 03/03); comparar de volta as rejeita
-	if (
-		data.getFullYear() !== ano ||
-		data.getMonth() !== mes - 1 ||
-		data.getDate() !== dia
-	) {
-		return false;
-	}
-	const hoje = new Date();
-	hoje.setHours(0, 0, 0, 0);
-	return data <= hoje;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(nascimento)) return false;
+
+  const [ano, mes, dia] = nascimento.split('-').map(Number);
+  const data = new Date(ano, mes - 1, dia);
+  // O JavaScript "corrige" datas inexistentes (31/02 vira 03/03); comparar de volta as rejeita
+  if (data.getFullYear() !== ano || data.getMonth() !== mes - 1 || data.getDate() !== dia) {
+    return false;
+  }
+
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  return data <= hoje;
 }
 
-// Valida os campos. Devolve { status, erro } se houver problema, ou null se estiver tudo certo.
-function validarCampos({ nome, email, nascimento }) {
-	if (!nome || !email || !nascimento) {
-		return { status: 400, erro: 'Nome, e-mail e nascimento são obrigatórios' };
-	}
-	if (!REGEX_EMAIL.test(email)) {
-		return { status: 400, erro: 'Formato de e-mail inválido' };
-	}
-	if (!nascimentoValido(nascimento)) {
-		return { status: 400, erro: 'Data de nascimento inválida ou no futuro' };
-	}
-	return null;
+// Devolve { status, erro } se houver problema, ou null se os dados estiverem corretos
+function validarDados(corpo) {
+  const { nome, email, nascimento } = corpo ?? {};
+
+  if (!nome || !email || !nascimento) {
+    return { status: 400, erro: 'Nome, e-mail e nascimento são obrigatórios' };
+  }
+  if (!REGEX_EMAIL.test(email)) {
+    return { status: 400, erro: 'Formato de e-mail inválido' };
+  }
+  if (!nascimentoValido(nascimento)) {
+    return { status: 400, erro: 'Data de nascimento inválida ou no futuro' };
+  }
+  return null;
 }
 
-// Converte o :id da URL em número inteiro válido para o banco (ou null)
-function lerId(texto) {
-	const id = Number(texto);
-	return Number.isInteger(id) && id > 0 && id <= 2147483647 ? id : null;
+function idValido(id) {
+  return Number.isInteger(id) && id > 0 && id <= 2147483647;
 }
 
-// Envolve cada rota para tratar erros do banco sem derrubar o servidor
-function rota(funcao) {
-	return (req, res) => {
-		Promise.resolve(funcao(req, res)).catch((erro) => {
-			// 23505 = violação de UNIQUE no PostgreSQL (e-mail repetido)
-			if (erro.code === '23505') {
-				return res.status(409).json({ erro: 'E-mail já cadastrado' });
-			}
-			console.error('Erro na rota:', erro);
-			res.status(500).json({ erro: 'Erro interno do servidor' });
-		});
-	};
-}
+function tratarErro(res, erro) {
+  console.error(erro);
 
-// ---------- Rotas ----------
+  if (erro.code === '23505') {
+    // violação da restrição UNIQUE (e-mail repetido)
+    return res.status(409).json({ erro: 'Já existe um paciente com este e-mail' });
+  }
+
+  res.status(500).json({ erro: 'Erro interno do servidor' });
+}
 
 // READ (lista) — GET /pacientes  (aceita ?nome=ana)
-app.get(
-	'/pacientes',
-	rota(async (req, res) => {
-		const { nome } = req.query;
+app.get('/pacientes', async (req, res) => {
+  const { nome } = req.query;
 
-		if (nome) {
-			// Escapa % e _ para que sejam tratados como texto comum no ILIKE
-			const termo = String(nome).trim().replace(/[\\%_]/g, '\\$&');
-			const { rows } = await pool.query(
-				`SELECT ${COLUNAS} FROM pacientes WHERE nome ILIKE $1 ORDER BY id`,
-				[`%${termo}%`]
-			);
-			return res.json(rows);
-		}
+  try {
+    if (nome) {
+      // Exercício 3: ILIKE é um LIKE que ignora maiúsculas/minúsculas.
+      // O % significa "qualquer sequência de caracteres": '%ana%' encontra "Ana", "Mariana"...
+      // Escapamos \, % e _ digitados pelo usuário para valerem como texto comum.
+      const termo = String(nome).trim().replace(/[\\%_]/g, '\\$&');
+      const resultado = await pool.query(
+        `SELECT ${COLUNAS} FROM pacientes WHERE nome ILIKE $1 ORDER BY id`,
+        [`%${termo}%`]
+      );
+      return res.json(resultado.rows);
+    }
 
-		const { rows } = await pool.query(`SELECT ${COLUNAS} FROM pacientes ORDER BY id`);
-		res.json(rows);
-	})
-);
+    const resultado = await pool.query(`SELECT ${COLUNAS} FROM pacientes ORDER BY id`);
+    res.json(resultado.rows);
+  } catch (erro) {
+    tratarErro(res, erro);
+  }
+});
 
-// READ (total) — GET /pacientes/total (antes de '/pacientes/:id', senão "total" vira um id)
-app.get(
-	'/pacientes/total',
-	rota(async (req, res) => {
-		const { rows } = await pool.query('SELECT COUNT(*)::int AS total FROM pacientes');
-		res.json({ total: rows[0].total });
-	})
-);
+// READ (total) — GET /pacientes/total
+// Exercício 2: precisa vir ANTES de '/pacientes/:id', senão o Express trata "total" como um id.
+app.get('/pacientes/total', async (req, res) => {
+  try {
+    const resultado = await pool.query('SELECT COUNT(*)::int AS total FROM pacientes');
+    res.json({ total: resultado.rows[0].total });
+  } catch (erro) {
+    tratarErro(res, erro);
+  }
+});
 
 // READ (um) — GET /pacientes/:id
-app.get(
-	'/pacientes/:id',
-	rota(async (req, res) => {
-		const id = lerId(req.params.id);
-		const { rows } = id
-			? await pool.query(`SELECT ${COLUNAS} FROM pacientes WHERE id = $1`, [id])
-			: { rows: [] };
+app.get('/pacientes/:id', async (req, res) => {
+  const id = Number(req.params.id);
 
-		if (rows.length === 0) {
-			return res.status(404).json({ erro: 'Paciente não encontrado' });
-		}
-		res.json(rows[0]);
-	})
-);
+  if (!idValido(id)) {
+    return res.status(400).json({ erro: 'ID inválido' });
+  }
+
+  try {
+    const resultado = await pool.query(
+      `SELECT ${COLUNAS} FROM pacientes WHERE id = $1`,
+      [id]
+    );
+
+    if (resultado.rowCount === 0) {
+      return res.status(404).json({ erro: 'Paciente não encontrado' });
+    }
+
+    res.json(resultado.rows[0]);
+  } catch (erro) {
+    tratarErro(res, erro);
+  }
+});
 
 // CREATE — POST /pacientes
-app.post(
-	'/pacientes',
-	rota(async (req, res) => {
-		const { nome, email, nascimento } = req.body ?? {};
+app.post('/pacientes', async (req, res) => {
+  const problema = validarDados(req.body);
+  if (problema) {
+    return res.status(problema.status).json({ erro: problema.erro });
+  }
 
-		const problema = validarCampos({ nome, email, nascimento });
-		if (problema) return res.status(problema.status).json({ erro: problema.erro });
+  // telefone é opcional (Exercício 4): o frontend atual não envia esse campo
+  const { nome, email, nascimento, telefone = null } = req.body;
 
-		// Os valores vão como parâmetros ($1, $2, $3): nunca concatene texto do usuário no SQL
-		// (isso evitaria SQL Injection).
-		const { rows } = await pool.query(
-			`INSERT INTO pacientes (nome, email, nascimento)
-			 VALUES ($1, $2, $3)
-			 RETURNING ${COLUNAS}`,
-			[nome, email, nascimento]
-		);
+  try {
+    const resultado = await pool.query(
+      `INSERT INTO pacientes (nome, email, nascimento, telefone)
+       VALUES ($1, $2, $3, $4)
+       RETURNING ${COLUNAS}`,
+      [nome, email, nascimento, telefone]
+    );
 
-		res.status(201).json(rows[0]);
-	})
-);
+    res.status(201).json(resultado.rows[0]);
+  } catch (erro) {
+    tratarErro(res, erro);
+  }
+});
 
 // UPDATE (completo) — PUT /pacientes/:id
-app.put(
-	'/pacientes/:id',
-	rota(async (req, res) => {
-		const id = lerId(req.params.id);
-		if (!id) return res.status(404).json({ erro: 'Paciente não encontrado' });
+app.put('/pacientes/:id', async (req, res) => {
+  const id = Number(req.params.id);
 
-		const { nome, email, nascimento } = req.body ?? {};
+  if (!idValido(id)) {
+    return res.status(400).json({ erro: 'ID inválido' });
+  }
 
-		const problema = validarCampos({ nome, email, nascimento });
-		if (problema) return res.status(problema.status).json({ erro: problema.erro });
+  const problema = validarDados(req.body);
+  if (problema) {
+    return res.status(problema.status).json({ erro: problema.erro });
+  }
 
-		const { rows } = await pool.query(
-			`UPDATE pacientes SET nome = $1, email = $2, nascimento = $3
-			 WHERE id = $4
-			 RETURNING ${COLUNAS}`,
-			[nome, email, nascimento, id]
-		);
+  const { nome, email, nascimento, telefone = null } = req.body;
 
-		if (rows.length === 0) {
-			return res.status(404).json({ erro: 'Paciente não encontrado' });
-		}
-		res.json(rows[0]);
-	})
-);
+  try {
+    // COALESCE($4, telefone): se o cliente não enviar telefone, mantém o que já estava gravado
+    const resultado = await pool.query(
+      `UPDATE pacientes
+          SET nome = $1, email = $2, nascimento = $3, telefone = COALESCE($4, telefone)
+        WHERE id = $5
+        RETURNING ${COLUNAS}`,
+      [nome, email, nascimento, telefone, id]
+    );
+
+    if (resultado.rowCount === 0) {
+      return res.status(404).json({ erro: 'Paciente não encontrado' });
+    }
+
+    res.json(resultado.rows[0]);
+  } catch (erro) {
+    tratarErro(res, erro);
+  }
+});
 
 // UPDATE (parcial) — PATCH /pacientes/:id
-app.patch(
-	'/pacientes/:id',
-	rota(async (req, res) => {
-		const id = lerId(req.params.id);
-		if (!id) return res.status(404).json({ erro: 'Paciente não encontrado' });
+app.patch('/pacientes/:id', async (req, res) => {
+  const id = Number(req.params.id);
 
-		const campos = req.body ?? {};
-		const enviados = ['nome', 'email', 'nascimento'].filter((c) => campos[c] !== undefined);
-		if (enviados.length === 0) {
-			return res
-				.status(400)
-				.json({ erro: 'Envie ao menos um campo: nome, email ou nascimento' });
-		}
+  if (!idValido(id)) {
+    return res.status(400).json({ erro: 'ID inválido' });
+  }
 
-		const atual = await pool.query(`SELECT ${COLUNAS} FROM pacientes WHERE id = $1`, [id]);
-		if (atual.rows.length === 0) {
-			return res.status(404).json({ erro: 'Paciente não encontrado' });
-		}
+  const campos = req.body ?? {};
+  const enviados = ['nome', 'email', 'nascimento', 'telefone'].filter(
+    (c) => campos[c] !== undefined
+  );
+  if (enviados.length === 0) {
+    return res
+      .status(400)
+      .json({ erro: 'Envie ao menos um campo: nome, email, nascimento ou telefone' });
+  }
 
-		// Valida o resultado final (campos novos + os que já existiam)
-		const resultado = { ...atual.rows[0], ...campos };
-		const problema = validarCampos(resultado);
-		if (problema) return res.status(problema.status).json({ erro: problema.erro });
+  try {
+    const atual = await pool.query(`SELECT ${COLUNAS} FROM pacientes WHERE id = $1`, [id]);
+    if (atual.rowCount === 0) {
+      return res.status(404).json({ erro: 'Paciente não encontrado' });
+    }
 
-		const { rows } = await pool.query(
-			`UPDATE pacientes SET nome = $1, email = $2, nascimento = $3
-			 WHERE id = $4
-			 RETURNING ${COLUNAS}`,
-			[resultado.nome, resultado.email, resultado.nascimento, id]
-		);
-		res.json(rows[0]);
-	})
-);
+    // Valida o resultado final (campos novos + os que já existiam)
+    const final = { ...atual.rows[0] };
+    enviados.forEach((c) => {
+      final[c] = campos[c];
+    });
+
+    const problema = validarDados(final);
+    if (problema) {
+      return res.status(problema.status).json({ erro: problema.erro });
+    }
+
+    const resultado = await pool.query(
+      `UPDATE pacientes
+          SET nome = $1, email = $2, nascimento = $3, telefone = $4
+        WHERE id = $5
+        RETURNING ${COLUNAS}`,
+      [final.nome, final.email, final.nascimento, final.telefone, id]
+    );
+
+    res.json(resultado.rows[0]);
+  } catch (erro) {
+    tratarErro(res, erro);
+  }
+});
 
 // DELETE — DELETE /pacientes/:id
-app.delete(
-	'/pacientes/:id',
-	rota(async (req, res) => {
-		const id = lerId(req.params.id);
-		const resultado = id
-			? await pool.query('DELETE FROM pacientes WHERE id = $1', [id])
-			: { rowCount: 0 };
+app.delete('/pacientes/:id', async (req, res) => {
+  const id = Number(req.params.id);
 
-		if (resultado.rowCount === 0) {
-			return res.status(404).json({ erro: 'Paciente não encontrado' });
-		}
-		res.status(204).send();
-	})
-);
+  if (!idValido(id)) {
+    return res.status(400).json({ erro: 'ID inválido' });
+  }
+
+  try {
+    const resultado = await pool.query('DELETE FROM pacientes WHERE id = $1', [id]);
+
+    if (resultado.rowCount === 0) {
+      return res.status(404).json({ erro: 'Paciente não encontrado' });
+    }
+
+    res.status(204).send();
+  } catch (erro) {
+    tratarErro(res, erro);
+  }
+});
 
 const PORTA = process.env.PORT || 3000;
 
 app.listen(PORTA, () => {
-	console.log(`Servidor rodando na porta ${PORTA}`);
+  console.log(`Servidor rodando na porta ${PORTA}`);
 });
